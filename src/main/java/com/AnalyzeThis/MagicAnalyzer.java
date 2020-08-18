@@ -37,46 +37,45 @@ import java.util.regex.Pattern;
 
 public class MagicAnalyzer {
 
+
+    public static void main(String[] args) throws InterruptedException, HarReaderException, IOException {
+        MagicAnalyzer myAnalyzer = new MagicAnalyzer();
+        myAnalyzer.doMagic(5,1000);
+    }
+
+
     private String driverPath = System.getProperty("user.dir" ) + "/src/main/resources/browserDrivers/windowschromedriver.exe";
     private String sFileName = System.getProperty("user.dir" ) + "/src/main/resources/DataProvider/CurrentHAR.har";
-    private int anomalyTime = 1000;
-    private int pagesToAnalyze = 5;
     private WebDriver driver;
     private BrowserMobProxy proxy;
     private boolean failed = false;
 
     private String scriptString = "var performance = window.performance || window.mozPerformance || window.msPerformance || window.webkitPerformance || {}; var network = performance.getEntries() || {}; return network;";
+
+
     public void setUp() throws UnknownHostException {
         try {
-            // start the proxy
-            proxy = new BrowserMobProxyServer();
-            proxy.enableHarCaptureTypes(CaptureType.getAllContentCaptureTypes());
-            proxy.setTrustAllServers(true);
-            proxy.setMitmDisabled(false);
-            proxy.start(0);
+            setupBMProxy();
 
-            //get the Selenium proxy object - org.openqa.selenium.Proxy;
-            Proxy seleniumProxy = ClientUtil.createSeleniumProxy(proxy);
-            String hostIp = Inet4Address.getLocalHost().getHostAddress();
-            seleniumProxy.setHttpProxy(hostIp + ":" + proxy.getPort());
-            seleniumProxy.setSslProxy(hostIp + ":" + proxy.getPort());
-            // configure it as a desired capability
+            // configure capabilities for logging prefs
+
             DesiredCapabilities capabilities = new DesiredCapabilities().chrome();
             capabilities.setCapability("applicationCacheEnabled", false);
+
             LoggingPreferences logPrefs = new LoggingPreferences();
             logPrefs.enable(LogType.PERFORMANCE, Level.ALL);
             logPrefs.enable(LogType.CLIENT, Level.ALL);
             logPrefs.enable(LogType.BROWSER, Level.ALL);
+            Proxy seleniumProxy = setupSeleniumProxy();
             capabilities.setCapability(CapabilityType.LOGGING_PREFS, logPrefs);
-
             capabilities.setCapability(CapabilityType.PROXY, seleniumProxy);
+
             ChromeOptions options = new ChromeOptions();
             options.addArguments("--incognito --media-cache-size=1 --disk-cache-size=1");
             options.addArguments("disable-infobars");
             options.addArguments("start-maximized");
             capabilities.setCapability(ChromeOptions.CAPABILITY, options);
 
-            //set chromedriver system property
             System.setProperty("webdriver.chrome.driver", driverPath);
             options.setProxy(seleniumProxy);
             driver = new ChromeDriver(capabilities);
@@ -86,13 +85,16 @@ public class MagicAnalyzer {
 
             failed = false;
         }
-        catch (Exception e){failed = true;}
+        catch (Exception e){
+            //This is implemented as sometimes instantiating a chrome driver fails
+            failed = true;}
 
 
     }
 
-    public void doMagic() throws HarReaderException, IOException, InterruptedException {
-        int totalNumberOfPages = pagesToAnalyze;
+
+    public void doMagic(int numPages, int anomalyTime) throws IOException {
+        int totalNumberOfPages = numPages;
         String fileReadPath = "pageList";
         String fileResultPath = "Result";
         String fileErrorPath = "Errors";
@@ -108,7 +110,6 @@ public class MagicAnalyzer {
                     String savePath = System.getProperty( "user.dir" ) + "/src/main/resources/DataProvider/currentHar.har";
                     proxy.newHar(savePath);
                     driver.get(pageList[i][0]);
-                    Thread.sleep(1000);
                     int oldNumRequests = getFinalNumberRequests();
                     double fileSize = getFinalPageSize();
                     double domInteractive = getFinalDomInteractive();
@@ -117,7 +118,6 @@ public class MagicAnalyzer {
 
                     if (domInteractive >= anomalyTime || loadedTime >= anomalyTime) {
                         driver.get(pageList[i][0]);
-                        Thread.sleep(1000);
                         oldNumRequests = getFinalNumberRequests();
                         fileSize = getFinalPageSize();
                         domInteractive = getFinalDomInteractive();
@@ -125,25 +125,8 @@ public class MagicAnalyzer {
                         loadedTime = getFinalLoadedTime();
                     }
 
-                    try {
-                        long lastHeight = (long) ((JavascriptExecutor) driver).executeScript("return document.body.scrollHeight");
-                        while (true) {
-                            for (int j = 1; j <= 100; j++) {
-                                //((JavascriptExecutor) driver).executeScript("window.scrollTo(0, document.body.scrollHeight/" + j + ");");
-                                Actions builder = new Actions(driver);
-                                builder.sendKeys(Keys.DOWN);
-                                builder.perform();
-                                Thread.sleep(50);
-                            }
-                            long newHeight = (long) ((JavascriptExecutor) driver).executeScript("return document.body.scrollHeight");
-                            if (newHeight == lastHeight) {
-                                break;
-                            }
-                            lastHeight = newHeight;
-                        }
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    scrollDown();
+
                     resultData[i + 1] = pageList[i][0] + "," +
                             Double.toString(domInteractive) + "," +
                             Double.toString(loadedTime) + "," +
@@ -152,16 +135,15 @@ public class MagicAnalyzer {
                             Double.toString(finishTime) + "," +
                             Double.toString(getFinalNumberRequests()) + "," +
                             Double.toString(getFinalPageSize());
+
                     errorData[i + 1] = pageList[i][0] + ", Passed";
+
                     System.out.println(resultData[i + 1]);
                     tearDown();
                 } else {
                     resultData[i + 1] = pageList[i][0] + ", AN ERROR OCCURED HERE!, THIS PAGE NEEDS TO BE RETESTED";
                     errorData[i + 1] = pageList[i] + ", THIS PAGE DID NOT WORK!";
                 }
-            }
-            for (String result : resultData) {
-                System.out.println(result);
             }
         }
         finally {
@@ -275,7 +257,7 @@ public class MagicAnalyzer {
         Matcher loadEventEnd = Pattern.compile("loadEventEnd=(.*?),").matcher(netData);
         double loadEventTime = 0.0;
         while (loadEventEnd.find()){
-           // System.out.println("LoadEventEnd: " + loadEventEnd.group(1));
+            // System.out.println("LoadEventEnd: " + loadEventEnd.group(1));
             if (Double.parseDouble(loadEventEnd.group(1)) >= loadEventTime){
                 loadEventTime = Double.parseDouble(loadEventEnd.group(1));
             }
@@ -314,20 +296,6 @@ public class MagicAnalyzer {
         return sumEncoded2;
     }
 
-    public int getFinalTransferSize2(){
-        int totalBytes = 0;
-        for (LogEntry entry : driver.manage().logs().get(LogType.PERFORMANCE)) {
-            if (entry.getMessage().contains("Network.dataReceived")) {
-                Matcher dataLengthMatcher = Pattern.compile("dataLength\":(.*?),").matcher(entry.getMessage());
-                dataLengthMatcher.find();
-                totalBytes = totalBytes + Integer.parseInt(dataLengthMatcher.group(1));
-                //Do whatever you want with the data here.
-            }
-        }
-        return totalBytes;
-    }
-
-
     private String fileToString(String filepath) throws IOException {
         InputStream is = new FileInputStream(filepath);
         BufferedReader buf = new BufferedReader(new InputStreamReader(is));
@@ -338,25 +306,41 @@ public class MagicAnalyzer {
         return sb.toString();
     }
 
-    public int getTransferSizeString (String filepath) throws IOException {
-        String fileString = fileToString(filepath);
-        int totalSize = 0;
-        Matcher dataLengthMatcher2 = Pattern.compile("\"transferSize\": (.*?),").matcher(fileString);
-        while (dataLengthMatcher2.find()){
-            //System.out.println("Transfer size: " + dataLengthMatcher2.group(1));
-            totalSize = totalSize + Integer.parseInt(dataLengthMatcher2.group(1));
-        }
-        return totalSize;
+    private void setupBMProxy(){
+        proxy = new BrowserMobProxyServer();
+        proxy.enableHarCaptureTypes(CaptureType.getAllContentCaptureTypes());
+        proxy.setTrustAllServers(true);
+        proxy.setMitmDisabled(false);
+        proxy.start(0);
     }
 
-    public int getTotalRequests (String filepath) throws IOException {
-        String fileString = fileToString(filepath);
-        int totalSize = 0;
-        Matcher dataLengthMatcher2 = Pattern.compile("\"transferSize\": (.*?),").matcher(fileString);
-        while (dataLengthMatcher2.find()){
-            //System.out.println("Transfer size: " + dataLengthMatcher2.group(1));
-            totalSize++;
+    private Proxy setupSeleniumProxy() throws UnknownHostException {
+        Proxy seleniumProxy = ClientUtil.createSeleniumProxy(proxy);
+        String hostIp = Inet4Address.getLocalHost().getHostAddress();
+        seleniumProxy.setHttpProxy(hostIp + ":" + proxy.getPort());
+        seleniumProxy.setSslProxy(hostIp + ":" + proxy.getPort());
+        return  seleniumProxy;
+    }
+
+    private void scrollDown(){
+        try {
+            long lastHeight = (long) ((JavascriptExecutor) driver).executeScript("return document.body.scrollHeight");
+            while (true) {
+                for (int j = 1; j <= 100; j++) {
+                    //((JavascriptExecutor) driver).executeScript("window.scrollTo(0, document.body.scrollHeight/" + j + ");");
+                    Actions builder = new Actions(driver);
+                    builder.sendKeys(Keys.DOWN);
+                    builder.perform();
+                    Thread.sleep(50);
+                }
+                long newHeight = (long) ((JavascriptExecutor) driver).executeScript("return document.body.scrollHeight");
+                if (newHeight == lastHeight) {
+                    break;
+                }
+                lastHeight = newHeight;
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
-        return totalSize;
     }
 }

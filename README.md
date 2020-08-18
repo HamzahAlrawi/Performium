@@ -7,7 +7,7 @@ Usage: Simply run the main method in the MagicAnalyzer class, specify the number
 This was built because a client had requested performance analysis of over 20,000 pages. Other tools did not satisfy my needs; hence Performium
 
 
-Expected/normal DOM time (or anamoly retryer) will re-test the page if the DOM loading time is higher. Sometimes the same page will load slowly once, but fast a hundred times; so we need to re-test the page again to get a proper reading.
+Expected/normal DOM time (or anomaly retryer) will re-test the page if the DOM loading time is higher. Sometimes the same page will load slowly once, but fast a hundred times; so we need to re-test the page again to get a proper reading.
 
 Future implementations:
 -Checking response code
